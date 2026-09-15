@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+data/raw/*.xlsx
+data/malecns_circuit.npz
+data/malecns_circuit_meta.json
+models/*.joblib
+models/*.json
+!data/.gitkeep
+!models/.gitkeep
+.streamlit/
