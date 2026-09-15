@@ -6,16 +6,35 @@ import numpy as np
 from PIL import Image, ImageOps
 
 
-def prepare_image(image: Image.Image, size: int = 64) -> np.ndarray:
-    """Return a centered grayscale image with bright digit foreground in [0, 1]."""
+def prepare_image(image: Image.Image, size: int = 8) -> np.ndarray:
+    """Return a digit cropped to its ink, centered, and downsampled to ``size``x``size`` in [0, 1].
+
+    Matches how scikit-learn's digits dataset is framed (ink fills the frame), since the
+    classifier is trained on that dataset. Bright foreground on a dark background.
+    """
+    if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
+        composited = Image.new("RGBA", image.size, (255, 255, 255, 255))
+        composited.paste(image.convert("RGBA"), mask=image.convert("RGBA"))
+        image = composited.convert("RGB")
     gray = ImageOps.autocontrast(image.convert("L"))
-    resized = ImageOps.contain(gray, (size, size), method=Image.Resampling.BILINEAR)
-    canvas = Image.new("L", (size, size), color=0)
-    canvas.paste(resized, ((size - resized.width) // 2, (size - resized.height) // 2))
-    values = np.asarray(canvas, dtype=np.float32) / 255.0
+    values = np.asarray(gray, dtype=np.float32) / 255.0
     if float(values.mean()) > 0.5:
         values = 1.0 - values
-    return values
+
+    ink = Image.fromarray((values * 255).astype(np.uint8))
+    bbox = ink.point(lambda p: 255 if p > 0.1 * 255 else 0).getbbox()
+    if bbox is None:
+        return np.zeros((size, size), dtype=np.float32)
+
+    cropped = ink.crop(bbox)
+    side = max(cropped.width, cropped.height)
+    square = Image.new("L", (side, side), color=0)
+    square.paste(cropped, ((side - cropped.width) // 2, (side - cropped.height) // 2))
+    resized = square.resize((size, size), resample=Image.Resampling.BOX)
+
+    out = np.asarray(resized, dtype=np.float32)
+    peak = float(out.max())
+    return out / peak if peak > 0 else out
 
 
 def bilinear_sample(image: np.ndarray, xy: np.ndarray) -> np.ndarray:
@@ -31,7 +50,7 @@ def bilinear_sample(image: np.ndarray, xy: np.ndarray) -> np.ndarray:
             + (1 - dx) * dy * image[y1, x0] + dx * dy * image[y1, x1]).astype(np.float32)
 
 
-def sample_image(image: Image.Image, xy: np.ndarray, size: int = 64) -> tuple[np.ndarray, np.ndarray]:
+def sample_image(image: Image.Image, xy: np.ndarray, size: int = 8) -> tuple[np.ndarray, np.ndarray]:
     prepared = prepare_image(image, size=size)
     return prepared, bilinear_sample(prepared, xy)
 

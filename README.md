@@ -33,7 +33,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-The app runs offline after those files have been prepared. It does not need a neuPrint token.
+Draw a digit on the white canvas; a fly mascot reports its guess. The app runs offline after those files have been prepared. It does not need a neuPrint token.
 
 ## Rebuild the data and models
 
