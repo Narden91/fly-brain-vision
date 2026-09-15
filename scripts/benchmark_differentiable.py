@@ -6,6 +6,7 @@ import argparse
 import itertools
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -16,15 +17,28 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.train_differentiable_probe import TrainingConfig, fit_differentiable_model  # noqa: E402
 from scripts.train_probe import split_indices  # noqa: E402
-from src.malecns_circuit import load_circuit  # noqa: E402
+from src.malecns_circuit import MaleCNSCircuit, load_circuit  # noqa: E402
 from src.rewiring import degree_weight_preserving_rewire, target_permutation_rewire  # noqa: E402
+
+CONTROL_NAMES = ("target_permutation", "degree_weight_preserving")
 
 
 def paired_sign_flip_pvalue(differences: list[float]) -> float:
     """Exact one-sided paired sign-flip test for a positive mean difference."""
     observed = float(np.mean(differences))
-    signed_means = [np.mean(np.asarray(signs) * differences) for signs in itertools.product((-1, 1), repeat=len(differences))]
+    signed_means = [
+        np.mean(np.asarray(signs) * differences) for signs in itertools.product((-1, 1), repeat=len(differences))
+    ]
     return float(np.mean(np.asarray(signed_means) >= observed - 1e-12))
+
+
+def build_controls(circuit: MaleCNSCircuit, seed: int, swaps_per_edge: int) -> dict[str, MaleCNSCircuit]:
+    return {
+        "target_permutation": target_permutation_rewire(circuit, seed=seed),
+        "degree_weight_preserving": degree_weight_preserving_rewire(
+            circuit, seed=seed, swaps_per_edge=swaps_per_edge
+        ),
+    }
 
 
 def main() -> None:
@@ -50,12 +64,6 @@ def main() -> None:
     )
     circuit = load_circuit(ROOT / "data/malecns_circuit.npz", ROOT / "data/malecns_circuit_meta.json")
     digits = load_digits()
-    control_builders = {
-        "target_permutation": lambda seed: target_permutation_rewire(circuit, seed=seed),
-        "degree_weight_preserving": lambda seed: degree_weight_preserving_rewire(
-            circuit, seed=seed, swaps_per_edge=args.swaps_per_edge
-        ),
-    }
     runs: list[dict] = []
     for seed in seeds:
         train_indices, test_indices = split_indices(digits.target, seed)
@@ -63,15 +71,15 @@ def main() -> None:
             circuit, digits.images, digits.target, train_indices, test_indices, seed=seed, config=config
         )
         controls = {}
-        for name, build_control in control_builders.items():
+        for name, control_circuit in build_controls(circuit, seed, args.swaps_per_edge).items():
             _, controls[name] = fit_differentiable_model(
-                build_control(seed), digits.images, digits.target, train_indices, test_indices, seed=seed, config=config
+                control_circuit, digits.images, digits.target, train_indices, test_indices, seed=seed, config=config
             )
         runs.append({"seed": seed, "real": real_metrics, "controls": controls})
 
     real_scores = np.asarray([run["real"]["temporal_accuracy"] for run in runs])
     control_summary = {}
-    for name in control_builders:
+    for name in CONTROL_NAMES:
         scores = np.asarray([run["controls"][name]["temporal_accuracy"] for run in runs])
         differences = (real_scores - scores).tolist()
         control_summary[name] = {
@@ -84,7 +92,7 @@ def main() -> None:
         "model_kind": "differentiable-fixed-connectome",
         "dataset": circuit.metadata.get("dataset"),
         "seeds": seeds,
-        "training": config.__dict__,
+        "training": asdict(config),
         "real_mean_temporal_accuracy": float(real_scores.mean()),
         "controls": control_summary,
         "release_criterion": "real temporal accuracy exceeds every control by >= 0.01 with paired sign-flip p < 0.05",

@@ -27,21 +27,21 @@ from src.differentiable_circuit import (  # noqa: E402
 from src.malecns_circuit import MaleCNSCircuit, load_circuit  # noqa: E402
 from src.temporal_digits import VARIANT_NAMES, TemporalDigitSet, build_temporal_digit_set, sample_sequence_batch  # noqa: E402
 
+CPU_BATCH_SIZE = 64
+CUDA_BATCH_SIZE = 512
+
 
 @dataclass(frozen=True)
 class TrainingConfig:
     steps: int = 8
     epochs: int = 20
-    # Zero picks a conservative CPU batch or a larger RTX-friendly CUDA batch.
     batch_size: int = 0
     learning_rate: float = 0.01
     l1_weight: float = 0.0005
     device: str = "auto"
 
 
-def _loader(
-    data: TemporalDigitSet, batch_size: int, *, shuffle: bool, seed: int, pin_memory: bool = False
-) -> DataLoader:
+def _loader(data: TemporalDigitSet, batch_size: int, *, shuffle: bool, seed: int, device: torch.device) -> DataLoader:
     dataset = TensorDataset(torch.from_numpy(data.frames), torch.from_numpy(data.labels), torch.from_numpy(data.variants))
     generator = torch.Generator().manual_seed(seed)
     return DataLoader(
@@ -50,8 +50,18 @@ def _loader(
         shuffle=shuffle,
         generator=generator,
         num_workers=0,
-        pin_memory=pin_memory,
+        pin_memory=device.type == "cuda",
     )
+
+
+def _move_to_device(device: torch.device, *tensors: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    return tuple(tensor.to(device, non_blocking=device.type == "cuda") for tensor in tensors)
+
+
+def _effective_batch_size(requested_batch_size: int, device: torch.device) -> int:
+    if requested_batch_size > 0:
+        return requested_batch_size
+    return CUDA_BATCH_SIZE if device.type == "cuda" else CPU_BATCH_SIZE
 
 
 @torch.inference_mode()
@@ -60,21 +70,17 @@ def evaluate_model(
 ) -> dict[str, Any]:
     model.eval()
     device = next(model.parameters()).device
-    non_blocking = device.type == "cuda"
     correct = np.zeros(len(VARIANT_NAMES), dtype=np.int64)
     totals = np.zeros(len(VARIANT_NAMES), dtype=np.int64)
-    for frames, labels, variants in _loader(data, batch_size, shuffle=False, seed=0, pin_memory=non_blocking):
-        frames = frames.to(device, non_blocking=non_blocking)
-        labels = labels.to(device, non_blocking=non_blocking)
-        variants = variants.to(device, non_blocking=non_blocking)
+    for frames, labels, variants in _loader(data, batch_size, shuffle=False, seed=0, device=device):
+        frames, labels, variants = _move_to_device(device, frames, labels, variants)
         inputs = sample_sequence_batch(frames, xy)
         logits, _ = model(inputs)
         predicted = logits.argmax(dim=1)
-        for variant in variants.unique():
+        for variant in variants.unique().tolist():
             mask = variants == variant
-            index = int(variant)
-            correct[index] += int((predicted[mask] == labels[mask]).sum())
-            totals[index] += int(mask.sum())
+            correct[variant] += int((predicted[mask] == labels[mask]).sum())
+            totals[variant] += int(mask.sum())
     by_variant = {name: float(correct[index] / totals[index]) for index, name in enumerate(VARIANT_NAMES)}
     temporal = correct[5:].sum() / totals[5:].sum()
     return {
@@ -102,20 +108,16 @@ def fit_differentiable_model(
     test_data = build_temporal_digit_set(images[test_indices], labels[test_indices], frames=config.steps, source_indices=test_indices)
     model = DifferentiableCircuitClassifier(circuit, steps=config.steps)
     device = place_model_with_sparse_fallback(model, config.device)
-    batch_size = config.batch_size or (512 if device.type == "cuda" else 64)
-    non_blocking = device.type == "cuda"
+    batch_size = _effective_batch_size(config.batch_size, device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     objective = nn.CrossEntropyLoss()
     xy = np.asarray(circuit.metadata["input_xy"], dtype=np.float32)
 
     model.train()
     for _ in range(config.epochs):
-        for frames, targets, _ in _loader(
-            train_data, batch_size, shuffle=True, seed=seed, pin_memory=non_blocking
-        ):
+        for frames, targets, _ in _loader(train_data, batch_size, shuffle=True, seed=seed, device=device):
             optimizer.zero_grad(set_to_none=True)
-            frames = frames.to(device, non_blocking=non_blocking)
-            targets = targets.to(device, non_blocking=non_blocking)
+            frames, targets = _move_to_device(device, frames, targets)
             logits, _ = model(sample_sequence_batch(frames, xy))
             loss = objective(logits, targets) + config.l1_weight * model.readout_l1()
             loss.backward()

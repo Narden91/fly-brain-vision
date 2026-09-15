@@ -12,6 +12,14 @@ interface Point {
   y: number
 }
 
+function clearCanvas(canvas: HTMLCanvasElement, size: number): boolean {
+  const context = canvas.getContext('2d')
+  if (!context) return false
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, size, size)
+  return true
+}
+
 function pointFromEvent(event: React.PointerEvent<HTMLCanvasElement>): Point {
   const canvas = event.currentTarget
   const rect = canvas.getBoundingClientRect()
@@ -27,10 +35,8 @@ export function DrawingCanvas({ size, strokeWidth, onStrokeEnd, onClear }: Drawi
   const lastPointRef = useRef<Point>({ x: 0, y: 0 })
 
   useEffect(() => {
-    const context = canvasRef.current?.getContext('2d')
-    if (!context) return
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, size, size)
+    const canvas = canvasRef.current
+    if (canvas) clearCanvas(canvas, size)
   }, [size])
 
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -74,10 +80,8 @@ export function DrawingCanvas({ size, strokeWidth, onStrokeEnd, onClear }: Drawi
   }
 
   function handleClear() {
-    const context = canvasRef.current?.getContext('2d')
-    if (!context) return
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, size, size)
+    const canvas = canvasRef.current
+    if (!canvas || !clearCanvas(canvas, size)) return
     onClear()
   }
 

@@ -13,8 +13,6 @@ import { useMeta } from './hooks/useMeta'
 import { usePrediction } from './hooks/usePrediction'
 
 const CANVAS_SIZE = 280
-// Training digits are thick, blocky 8x8 strokes; a thin pen stroke downsamples to a
-// faint smear. Raise/lower if handwriting on your display draws thinner/thicker.
 const STROKE_WIDTH = 18
 
 function App() {
@@ -28,7 +26,7 @@ function App() {
     [predict],
   )
 
-  const hasFullPrediction = data?.prediction != null && data.probabilities != null
+  const hasPrediction = data?.prediction != null && data.probabilities != null
 
   return (
     <main className="app">
@@ -71,7 +69,7 @@ function App() {
 
       <BrainScan />
 
-      {hasFullPrediction && data && (
+      {hasPrediction && data && (
         <section className="results" aria-labelledby="results-heading">
           <div className="results__header">
             <div>

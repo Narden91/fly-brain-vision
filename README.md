@@ -1,318 +1,137 @@
 # MaleCNS Fly Brain Classifier
 
-Can a real biological wiring diagram be used like a computational network?
+![Illustration of the MaleCNS visual circuit](assets/Cover.png)
 
-This project extracts a small visual circuit from the public MaleCNS v1.0 fruit-fly connectome, stimulates its visual-column neurons with an image, propagates activity through measured synaptic connections, and classifies the resulting neural activity with a linear probe.
+An interactive experiment that sends a handwritten digit through a fixed visual subgraph from the MaleCNS v1.0 fruit-fly connectome.
 
 ```text
-image
-  ↓
-real MaleCNS optic-column neurons
-  ↓
-real MaleCNS connectivity
-  ↓
-toy dynamical simulation
-  ↓
-downstream neural activity
-  ↓
-linear classifier
-  ↓
-digit prediction
+drawn digit → optic-column inputs → fixed MaleCNS wiring → sparse readout → prediction
 ```
 
-> This is not a simulated fly mind or biologically complete neural simulation. MaleCNS provides measured neuron-to-neuron wiring and synapse counts; dynamics, input encoding, and classifier are simplified software assumptions. This demonstrates the path from public connectome data to a computational graph, not biological digit recognition capability.
+The circuit uses measured connectivity and synapse counts. Input encoding, dynamics, and the digit readout are software choices. This is not a simulation of a fly recognising handwritten digits.
 
-## Quick Start
+## Run the app
 
-### Requirements
+Requirements: Python 3.10+, Node.js 18+, and npm 9+.
 
-- Python 3.10+
-- Node.js 18+
-- npm 9+
+```powershell
+pip install -r requirements.txt
+cd frontend
+npm install
+npm run build
+cd ..
+python -m uvicorn backend.main:app --port 8000
+```
 
-### NVIDIA GPU acceleration (RTX 5080)
+Open <http://localhost:8000>, draw a digit, and inspect the reduced 8×8 input, optic-column sampling, circuit activity, and prediction.
 
-The differentiable fixed-connectome model uses CUDA automatically when a
-CUDA-enabled PyTorch installation can execute its sparse recurrence. It falls
-back to CPU if CUDA is missing or that sparse operation is unsupported. For this
-RTX 5080, install the provided CUDA 12.8 environment requirements (the PyTorch
-CUDA index publishes Windows wheels for this track), then verify it:
+### RTX 5080 / CUDA
+
+The differentiable model selects CUDA automatically and falls back to CPU when CUDA or the required sparse operation is unavailable. For an RTX 5080, install the CUDA environment:
 
 ```powershell
 pip install -r requirements-cuda.txt
 python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-```
-
-The pinned CUDA wheel is a convenience for this project; the
-[official PyTorch selector](https://pytorch.org/get-started/locally/) remains
-the reference if you need a different Python or CUDA combination.
-
-Train with automatic selection (the default) or require the GPU explicitly:
-
-```powershell
-python scripts/train_differentiable_probe.py --device auto
 python scripts/train_differentiable_probe.py --device cuda
 ```
 
-For the API server, `MALECNS_DEVICE=auto` is the default. Set it to `cuda` to
-fail fast rather than fall back, or to `cpu` for reproducible CPU-only runs.
+The API uses `MALECNS_DEVICE=auto` by default. Set it to `cuda` to require the GPU or `cpu` for a reproducible CPU run.
 
 ```powershell
 $env:MALECNS_DEVICE = "cuda"
 python -m uvicorn backend.main:app --port 8000
 ```
 
-### Run the demo (with pre-built data and models)
+## Train and evaluate
 
-```bash
-# 1. Clone and navigate
-git clone <repo-url>
-cd fly-brain-vision
+The app uses `models/differentiable_probe.pt` when present; otherwise it uses the legacy linear probe.
 
-# 2. Install Python backend dependencies
-pip install -r requirements.txt
+```powershell
+# Train the fixed-connectome model.
+python scripts/train_differentiable_probe.py --device auto
 
-# 3. Install and build frontend
-cd frontend
-npm install
-npm run build
-cd ..
-
-# 4. Start the application
-python -m uvicorn backend.main:app --port 8000
+# Compare real wiring with matched rewired controls across ten fixed seeds.
+python scripts/benchmark_differentiable.py --device auto
 ```
 
-Open <http://localhost:8000> in your browser. Draw a digit on the white canvas; the fly mascot predicts the digit and displays:
-- **What the fly sees**: 8×8 grayscale image after preprocessing
-- **Visual-column sampling**: MaleCNS optic-column neuron positions and activation
-- **Connectome activity**: Circuit statistics (neurons, synapses, simulation steps)
-- **Prediction**: Confidence scores for each digit 0-9
-- **Top cell types**: Downstream neurons with highest activity
+The benchmark writes `models/differentiable_benchmark.json`. A circuit benefit is reported only when the real circuit exceeds every control by at least one percentage point on mean held-out temporal accuracy and the paired sign-flip test is below 0.05.
 
-**Shortcut:** `make run` does steps 2-4.
+The older baseline remains available when needed:
 
-## Architecture
+```powershell
+python scripts/train_probe.py
+python scripts/benchmark.py
+```
 
-**Backend** (`backend/main.py`): FastAPI wraps the offline pipeline (`src/`) with two HTTP endpoints:
-- `GET /api/meta` — Returns circuit metadata and benchmark accuracy
-- `POST /api/predict` — Accepts canvas image, runs simulation, returns prediction and visualizations
+## Development and verification
 
-**Frontend** (`frontend/`): React 19 + TypeScript with:
-- HTML5 canvas for freehand digit drawing
-- Animated SVG fly mascot with expression feedback
-- Real-time prediction with loading/error states
-- CSS-based bar charts (no external chart library)
+For frontend hot reload, run the API and Vite separately:
 
-**Full-stack deployment:** Backend serves the built React app, so one process on one port in production.
-
-## Development
-
-### Frontend hot reload (Vite dev server + backend)
-
-**Terminal 1** — Backend with auto-reload:
-```bash
+```powershell
+# Terminal 1
 python -m uvicorn backend.main:app --port 8000 --reload
-```
 
-**Terminal 2** — Frontend dev server:
-```bash
+# Terminal 2
 cd frontend
 npm run dev
 ```
 
-Open <http://localhost:5173>. Vite proxies `/api` calls to the backend at `:8000`. Changes to React components hot-reload instantly.
-
-### Build and test
-
-```bash
-make install          # Install Python + Node dependencies
-make lint             # Run oxlint (frontend) and Python linters
-make test             # Run pytest suite
-make frontend-build   # Build optimized React bundle
-```
-
-## Rebuild data and models from scratch
-
-Requires a free neuPrint token from <https://neuprint.janelia.org>. Store in your shell environment; never commit it.
-
-**Bash/Zsh:**
-
-```bash
-export NEUPRINT_APPLICATION_CREDENTIALS="your-token-here"
-python scripts/build_circuit.py
-python scripts/train_probe.py
-python scripts/benchmark.py
-```
-
-**PowerShell:**
+Vite runs at <http://localhost:5173> and proxies API calls to port 8000.
 
 ```powershell
-$env:NEUPRINT_APPLICATION_CREDENTIALS = "your-token-here"
-python scripts/build_circuit.py
-python scripts/train_probe.py
-python scripts/benchmark.py
-```
-
-Or use `make`:
-
-```bash
-make circuit
-make train
-make benchmark
-```
-
-### What each script does
-
-**`build_circuit.py`:**
-
-- Downloads `optic-column-type-assignments-v1.0.xlsx` from [flyconnectome/2025malecns](https://github.com/flyconnectome/2025malecns)
-- Selects valid right-eye L1 neurons as visual input
-- Queries MaleCNS via neuPrint API for 2-hop downstream connectivity
-- Normalizes sparse adjacency matrix (log1p counts, row normalization)
-- Outputs: `data/malecns_circuit.npz`, `data/malecns_circuit_meta.json`
-
-**`train_probe.py`:**
-
-- Uses scikit-learn handwritten digits (1,797 train, 600 test, no external download)
-- Preprocesses: crop to ink, center, downsample to 8×8
-- Simulates activity through MaleCNS circuit
-- Trains logistic regression on hidden-layer activity
-- Outputs: `models/digit_probe.joblib`, `models/digit_probe.json`
-
-**`benchmark.py`:**
-
-- Compares three models on held-out test set:
-  1. Input-only linear baseline (no circuit)
-  2. MaleCNS circuit + hidden-state readout
-  3. Randomized-edge control (circuit with shuffled weights)
-- Outputs: `models/benchmark.json`
-
-**Expected accuracy:** ~95.6% (MaleCNS), 94.4% (input-only), 96.7% (randomized control)
-
-## Testing
-
-Run the full test suite:
-
-```bash
-make test
-```
-
-Tests verify:
-
-- Image preprocessing (crop, center, downsample to 8×8)
-- End-to-end pipeline on simulated digits
-- API endpoints return correct JSON shapes
-
-## Experimental design
-
-The classifier pipeline:
-
-```text
-digit image → optic-column samples → MaleCNS dynamics → hidden activity → logistic regression
-```
-
-Key design choices:
-
-- **Feature vector:** Concatenated final and mean activity from downstream neurons (not raw pixels)
-- **Classifier:** Logistic regression (scikit-learn), no hyperparameter tuning
-- **Baseline comparison:** Input-only linear classifier to isolate circuit contribution
-- **Control:** Randomized-weight circuit to validate that specific wiring matters
-
-Results are computed fresh each run; no pre-computed accuracy values in the repo.
-
-## Project structure
-
-```text
-fly-brain-vision/
-├── backend/                    # FastAPI server
-│   └── main.py                # API endpoints and frontend serving
-├── frontend/                   # React + TypeScript application
-│   ├── src/
-│   │   ├── components/        # UI components (canvas, mascot, panels)
-│   │   ├── hooks/             # Custom hooks (useMeta, usePrediction)
-│   │   ├── api.ts             # HTTP client
-│   │   ├── types.ts           # TypeScript interfaces
-│   │   ├── App.tsx            # Root component
-│   │   └── App.css            # Styles
-│   ├── dist/                  # Built production bundle
-│   └── package.json
-├── src/                        # Python pipeline (unchanged)
-│   ├── image_encoder.py       # Image preprocessing
-│   ├── malecns_circuit.py     # Circuit loading
-│   └── simulation.py          # Dynamics simulator
-├── scripts/                    # Data prep and training
-│   ├── build_circuit.py       # Download and build MaleCNS subgraph
-│   ├── train_probe.py         # Train digit classifier
-│   └── benchmark.py           # Compare baseline, MaleCNS, and control
-├── data/                       # Pre-computed circuit and metadata
-│   ├── malecns_circuit.npz
-│   └── malecns_circuit_meta.json
-├── models/                     # Trained classifier
-│   ├── digit_probe.joblib
-│   └── benchmark.json
-├── tests/                      # Python unit tests
-├── requirements.txt            # Python dependencies
-├── Makefile                    # Task automation
-└── README.md                   # This file
-```
-
-## Troubleshooting
-
-**Port already in use:** Change the port in the startup command:
-
-```bash
-python -m uvicorn backend.main:app --port 8001
-```
-
-**Missing data/models files:** Run the full rebuild sequence (see "Rebuild data and models from scratch").
-
-**Frontend build fails:** Clear npm cache and reinstall:
-
-```bash
+python -m pytest -q
 cd frontend
-rm -rf node_modules package-lock.json
-npm install
 npm run build
 ```
 
-**Canvas not responding:** Check browser console for errors. Clear browser cache and reload.
+The API exposes:
 
-**neuPrint API errors during rebuild:** Verify your token has permission scope. Regenerate at <https://neuprint.janelia.org/account>.
+- `GET /api/meta` — circuit facts, model version, device, and benchmark metrics.
+- `POST /api/predict` — a canvas PNG data URL in; prediction and visualisations out.
 
-## Scientific limits
+## Rebuild the circuit artifact
 
-MaleCNS gives biological connectivity and anatomical synapse counts. It does not supply measured activity for this task, an image encoder, effective synaptic signs, or a digit classifier. The simulated states are software outputs, not measured fly neural activity. Neurotransmitter annotations, where retained in metadata, are predictions and are not required for the default unsigned simulator.
+The repository includes a pre-built visual subgraph. Rebuilding it requires a neuPrint token from <https://neuprint.janelia.org>.
 
-## Data source and attribution
-
-MaleCNS v1.0 is the public complete adult male *Drosophila* CNS connectome, produced by a collaboration involving HHMI Janelia/FlyEM, University of Cambridge, MRC Laboratory of Molecular Biology, Google Research, and collaborators. The release contains more than 166,000 neurons and about 125 million synaptic connections. This demo uses only a small visual subgraph.
-
-MaleCNS-derived data are CC-BY and retain their upstream attribution requirements. The code in this repository is MIT licensed; that does not relicense the MaleCNS data.
-
-Sources: [MaleCNS supplemental data](https://github.com/flyconnectome/2025malecns), [neuPrint](https://neuprint.janelia.org).
-
-## License
-
-**Code:** MIT License (see LICENSE file)
-
-**Data:** MaleCNS data is CC-BY 4.0. When using the connectome data, cite:
-> [MaleCNS citation — see flyconnectome/2025malecns repository]
-
-## Citation
-
-If you use this demo in research, cite MaleCNS v1.0:
-
-```bibtex
-@article{maelecns2025,
-  title={MaleCNS: Complete connectome of the adult Drosophila male brain},
-  year={2025},
-  organization={FlyEM, HHMI Janelia and collaborators}
-}
+```powershell
+$env:NEUPRINT_APPLICATION_CREDENTIALS = "your-token"
+python scripts/build_circuit.py
+python scripts/train_differentiable_probe.py --device auto
+python scripts/benchmark_differentiable.py --device auto
 ```
 
-## Getting help
+`build_circuit.py` selects optic-column inputs, queries a two-hop MaleCNS subgraph, normalises its sparse matrix, and writes `data/malecns_circuit.npz` plus metadata.
 
-- **API questions:** Check the FastAPI docs at <http://localhost:8000/docs>
-- **neuPrint API issues:** See [neuPrint documentation](https://neuprint.janelia.org)
-- **MaleCNS data questions:** Visit [flyconnectome/2025malecns](https://github.com/flyconnectome/2025malecns)
-- **Bug reports:** Open an issue on GitHub
+## Project layout
+
+```text
+backend/        FastAPI API and static frontend serving
+frontend/       React canvas interface and visualisations
+src/            circuit loading, image encoding, simulation, and rewiring
+scripts/        circuit build, model training, and benchmarks
+data/           circuit artifact and metadata
+models/         locally generated checkpoints and metrics
+tests/          Python regression tests
+```
+
+## Scientific scope
+
+MaleCNS provides anatomical connectivity and synapse counts, not measured activity for this task, an image encoder, synaptic signs, or a digit classifier. Simulated states are therefore model outputs, not recorded fly neural activity. The rewired controls are included to test whether this particular wiring adds value beyond matched graph statistics.
+
+## Data, attribution, and license
+
+MaleCNS v1.0 is the public complete adult male *Drosophila* CNS connectome. This demo uses a small visual subgraph of that release. MaleCNS-derived data are CC-BY and retain their upstream attribution requirements; the repository code is MIT licensed and does not relicense the data.
+
+Sources: [MaleCNS supplemental data](https://github.com/flyconnectome/2025malecns) · [neuPrint](https://neuprint.janelia.org)
+
+For research use, cite the MaleCNS v1.0 release described by the source repository above.
+
+## Troubleshooting
+
+If port 8000 is occupied, use another port:
+
+```powershell
+python -m uvicorn backend.main:app --port 8001
+```
+
+If the frontend is running through Vite, keep the API on port 8000 unless you also update the proxy configuration.

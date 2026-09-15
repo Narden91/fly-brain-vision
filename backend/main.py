@@ -58,26 +58,24 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_model(circuit):
+    if DIFFERENTIABLE_MODEL_PATH.exists():
+        model, checkpoint = load_differentiable_probe(DIFFERENTIABLE_MODEL_PATH, circuit)
+        device = place_model_with_sparse_fallback(model, os.getenv("MALECNS_DEVICE", "auto"))
+        classes = np.asarray(checkpoint["classes"], dtype=np.int64)
+        return model, None, classes, read_json(DIFFERENTIABLE_MODEL_META_PATH), device
+
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            "Classifier is missing. Run `python scripts/train_differentiable_probe.py` or scripts/train_probe.py."
+        )
+    probe = joblib.load(MODEL_PATH)
+    return None, probe, probe.classes_.astype(np.int64), read_json(MODEL_META_PATH), None
+
+
 try:
     circuit = load_circuit(MATRIX_PATH, CIRCUIT_META_PATH)
-    differentiable_probe = None
-    probe = None
-    if DIFFERENTIABLE_MODEL_PATH.exists():
-        differentiable_probe, differentiable_checkpoint = load_differentiable_probe(DIFFERENTIABLE_MODEL_PATH, circuit)
-        inference_device = place_model_with_sparse_fallback(
-            differentiable_probe, os.getenv("MALECNS_DEVICE", "auto")
-        )
-        classes = np.asarray(differentiable_checkpoint["classes"], dtype=np.int64)
-        model_meta = read_json(DIFFERENTIABLE_MODEL_META_PATH)
-    else:
-        if not MODEL_PATH.exists():
-            raise FileNotFoundError(
-                "Classifier is missing. Run `python scripts/train_differentiable_probe.py` or scripts/train_probe.py."
-            )
-        probe = joblib.load(MODEL_PATH)
-        inference_device = None
-        classes = probe.classes_.astype(np.int64)
-        model_meta = read_json(MODEL_META_PATH)
+    differentiable_probe, probe, classes, model_meta, inference_device = load_model(circuit)
 except (FileNotFoundError, ValueError, OSError, RuntimeError, KeyError) as exc:
     raise RuntimeError(str(exc)) from exc
 
@@ -96,7 +94,7 @@ app.add_middleware(
 
 
 class PredictRequest(BaseModel):
-    image: str  # "data:image/png;base64,...."
+    image: str
 
 
 def decode_data_url(data_url: str) -> Image.Image:
@@ -140,6 +138,16 @@ def top_cell_type_activity(mean_state: np.ndarray) -> list[dict]:
     return [{"cellType": row.cell_type, "activity": float(row.activity)} for row in top.itertuples()]
 
 
+def classify(input_values: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if differentiable_probe is not None:
+        return predict_differentiable(differentiable_probe, input_values)
+
+    result = simulator.simulate(input_values)
+    features = hidden_features(result.final_state, result.mean_state, circuit)
+    probabilities = probe.predict_proba(features[None])[0]
+    return probabilities, result.final_state, result.mean_state
+
+
 @app.get("/api/meta")
 def get_meta():
     """Static facts about the circuit and classifier — fetched once, not per prediction."""
@@ -172,13 +180,7 @@ def predict(req: PredictRequest):
     if float(prepared.max()) <= 0.0:
         return {"prediction": None, "confidence": 0.0}
 
-    if differentiable_probe is not None:
-        probabilities, final_state, mean_state = predict_differentiable(differentiable_probe, input_values)
-    else:
-        result = simulator.simulate(input_values)
-        features = hidden_features(result.final_state, result.mean_state, circuit)
-        probabilities = probe.predict_proba(features[None])[0]
-        final_state, mean_state = result.final_state, result.mean_state
+    probabilities, final_state, mean_state = classify(input_values)
     best = int(np.argmax(probabilities))
 
     fig, ax = plt.subplots(figsize=(3.4, 3.4))

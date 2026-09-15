@@ -10,8 +10,6 @@ interface PredictionState {
 
 const INITIAL_STATE: PredictionState = { data: null, isLoading: false, error: null }
 
-/** Predicts a digit from a canvas data URL. Ignores a stale response if a newer
- * stroke was drawn (and a newer request started) before this one came back. */
 export function usePrediction() {
   const [state, setState] = useState<PredictionState>(INITIAL_STATE)
   const latestRequestId = useRef(0)
@@ -30,7 +28,7 @@ export function usePrediction() {
   }, [])
 
   const reset = useCallback(() => {
-    latestRequestId.current += 1 // invalidate any in-flight request
+    latestRequestId.current += 1
     setState(INITIAL_STATE)
   }, [])
 

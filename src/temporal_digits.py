@@ -21,6 +21,21 @@ VARIANT_NAMES = (
     "motion-down",
 )
 
+STATIC_TRANSFORMS = {
+    "static": {},
+    "translated-left": {"x_shift": -1.25},
+    "translated-right": {"x_shift": 1.25},
+    "rotated-clockwise": {"angle": -12},
+    "rotated-counterclockwise": {"angle": 12},
+}
+
+MOTION_TRANSFORMS = {
+    "motion-left": ("x_shift", -1),
+    "motion-right": ("x_shift", 1),
+    "motion-up": ("y_shift", -1),
+    "motion-down": ("y_shift", 1),
+}
+
 
 @dataclass(frozen=True)
 class TemporalDigitSet:
@@ -39,8 +54,32 @@ def _transform(image: np.ndarray, *, x_shift: float = 0, y_shift: float = 0, ang
     return np.clip(transformed, 0, 1).astype(np.float32, copy=False)
 
 
-def build_temporal_digit_set(images: np.ndarray, labels: np.ndarray, *, frames: int = 8, source_indices: np.ndarray | None = None) -> TemporalDigitSet:
-    """Create deterministic augmentations after callers split original digit IDs."""
+def _static_sequence(images: np.ndarray, frames: int, transform: dict[str, float]) -> np.ndarray:
+    if transform:
+        images = np.stack([_transform(image, **transform) for image in images])
+    return np.repeat(images[:, None], frames, axis=1)
+
+
+def _motion_sequence(images: np.ndarray, frames: int, parameter: str, direction: int) -> np.ndarray:
+    offsets = np.linspace(-1.5, 1.5, frames, dtype=np.float32)
+    return np.stack(
+        [
+            np.stack([_transform(image, **{parameter: direction * offset}) for offset in offsets])
+            for image in images
+        ]
+    )
+
+
+def _variant_sequence(images: np.ndarray, variant: str, frames: int) -> np.ndarray:
+    if variant in STATIC_TRANSFORMS:
+        return _static_sequence(images, frames, STATIC_TRANSFORMS[variant])
+    parameter, direction = MOTION_TRANSFORMS[variant]
+    return _motion_sequence(images, frames, parameter, direction)
+
+
+def build_temporal_digit_set(
+    images: np.ndarray, labels: np.ndarray, *, frames: int = 8, source_indices: np.ndarray | None = None
+) -> TemporalDigitSet:
     images = np.asarray(images, dtype=np.float32)
     labels = np.asarray(labels, dtype=np.int64)
     if images.ndim != 3 or images.shape[1:] != (8, 8) or len(images) != len(labels) or frames < 2:
@@ -48,7 +87,10 @@ def build_temporal_digit_set(images: np.ndarray, labels: np.ndarray, *, frames: 
     scale = float(images.max())
     if scale > 1:
         images = images / scale
-    source_indices = np.arange(len(images), dtype=np.int64) if source_indices is None else np.asarray(source_indices, dtype=np.int64)
+    if source_indices is None:
+        source_indices = np.arange(len(images), dtype=np.int64)
+    else:
+        source_indices = np.asarray(source_indices, dtype=np.int64)
     if len(source_indices) != len(images):
         raise ValueError("source_indices must have one item per image.")
 
@@ -56,30 +98,8 @@ def build_temporal_digit_set(images: np.ndarray, labels: np.ndarray, *, frames: 
     expanded_labels: list[np.ndarray] = []
     expanded_sources: list[np.ndarray] = []
     variants: list[np.ndarray] = []
-    motion = np.linspace(-1.5, 1.5, frames, dtype=np.float32)
     for variant_index, variant in enumerate(VARIANT_NAMES):
-        if variant == "static":
-            sequence = np.repeat(images[:, None], frames, axis=1)
-        elif variant == "translated-left":
-            sequence = np.repeat(np.stack([_transform(image, x_shift=-1.25) for image in images])[:, None], frames, axis=1)
-        elif variant == "translated-right":
-            sequence = np.repeat(np.stack([_transform(image, x_shift=1.25) for image in images])[:, None], frames, axis=1)
-        elif variant == "rotated-clockwise":
-            sequence = np.repeat(np.stack([_transform(image, angle=-12) for image in images])[:, None], frames, axis=1)
-        elif variant == "rotated-counterclockwise":
-            sequence = np.repeat(np.stack([_transform(image, angle=12) for image in images])[:, None], frames, axis=1)
-        else:
-            axis = 0 if variant in {"motion-up", "motion-down"} else 1
-            direction = -1 if variant in {"motion-left", "motion-up"} else 1
-            sequence = np.stack(
-                [
-                    np.stack(
-                        [_transform(image, **({"y_shift": direction * amount} if axis == 0 else {"x_shift": direction * amount})) for amount in motion]
-                    )
-                    for image in images
-                ]
-            )
-        sequences.append(sequence)
+        sequences.append(_variant_sequence(images, variant, frames))
         expanded_labels.append(labels)
         expanded_sources.append(source_indices)
         variants.append(np.full(len(images), variant_index, dtype=np.int8))

@@ -22,16 +22,10 @@ class TorchSimulationResult:
 
 
 class DeviceSelectionError(RuntimeError):
-    """Raised when a caller explicitly requires an unavailable accelerator."""
+    """The requested device cannot execute the sparse circuit."""
 
 
 def resolve_torch_device(requested: str = "auto") -> torch.device:
-    """Select CUDA when available, with an explicit and reproducible CPU override.
-
-    ``auto`` is intentionally conservative: a later sparse-matrix smoke test can
-    still demote it to CPU. ``cuda`` means CUDA is required and therefore fails
-    loudly instead of silently changing an experiment's device.
-    """
     requested = requested.lower()
     if requested not in {"auto", "cpu", "cuda"}:
         raise ValueError("device must be one of: auto, cuda, cpu")
@@ -44,16 +38,12 @@ def resolve_torch_device(requested: str = "auto") -> torch.device:
             )
         return torch.device("cpu")
 
-    # RTX tensor cores can accelerate eligible float32 dense operations. The
-    # sparse recurrence itself remains float32 because that path is more broadly
-    # supported and numerically dependable than reduced-precision sparse CSR.
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.set_float32_matmul_precision("high")
     return torch.device("cuda")
 
 
 def device_label(device: torch.device) -> str:
-    """Return a stable, user-visible description without exposing configuration."""
     if device.type != "cuda":
         return "cpu"
     return f"cuda:{torch.cuda.current_device()} ({torch.cuda.get_device_name(device)})"
@@ -71,6 +61,7 @@ def scipy_to_torch_csr(matrix: sparse.spmatrix) -> torch.Tensor:
         torch.from_numpy(matrix.data),
         size=matrix.shape,
         dtype=torch.float32,
+        check_invariants=False,
     )
 
 
@@ -163,12 +154,6 @@ class DifferentiableCircuitClassifier(nn.Module):
 def place_model_with_sparse_fallback(
     model: DifferentiableCircuitClassifier, requested: str = "auto"
 ) -> torch.device:
-    """Place a model and verify its fixed sparse recurrence on the selected device.
-
-    Some PyTorch/CUDA combinations expose CUDA but do not implement the sparse
-    CSR operation used by this experiment. Auto mode catches precisely that case
-    and retains a functional CPU service; explicit CUDA mode reports the error.
-    """
     device = resolve_torch_device(requested)
     try:
         model.to(device)
