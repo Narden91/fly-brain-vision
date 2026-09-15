@@ -88,6 +88,7 @@ export function DrawingCanvas({ size, strokeWidth, onStrokeEnd, onClear }: Drawi
         width={size}
         height={size}
         className="drawing-canvas__surface"
+        aria-label="Drawing surface. Draw one handwritten digit with a pointer or touch."
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endStroke}
@@ -95,7 +96,7 @@ export function DrawingCanvas({ size, strokeWidth, onStrokeEnd, onClear }: Drawi
         onPointerCancel={endStroke}
       />
       <button type="button" className="drawing-canvas__clear" onClick={handleClear}>
-        Clear
+        Clear drawing
       </button>
     </div>
   )

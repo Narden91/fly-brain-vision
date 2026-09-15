@@ -1,19 +1,30 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --info-bg: #e8f1fb;
-  --info-text: #1c4b7a;
+  --text: #2d302b;
+  --text-h: #171914;
+  --text-muted: #656960;
+  --bg: #f5f3ed;
+  --surface: #fcfbf7;
+  --border: #deddd5;
+  --border-strong: #b9b9b0;
+  --ink: #20231e;
+  --accent: #a7442d;
+  --accent-soft: #d8a091;
+  --accent-pale: #e9c2b8;
+  --bar: #b8bbb1;
+  --bar-track: #e9e8e1;
+  --canvas-shadow: #d8d5cb;
+  --readout-muted: #c7c9bf;
+  --error: #f0a496;
+  --focus: #155f7a;
+  --mascot-sky: #e2e7dd;
+  --mascot-sky-end: #cdded7;
+  --mascot-glow: rgb(255 245 203 / 72%);
 
-  --fly-outline: #3a2a1a;
-  --fly-body-dark: #4a3222;
-  --fly-eye: #8b1e2b;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --sans: Inter, ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --serif: Iowan Old Style, Palatino Linotype, Book Antiqua, Palatino, Georgia, serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 16px/145% var(--sans);
+  font: 16px/1.5 var(--sans);
   color-scheme: light dark;
   color: var(--text);
   background: var(--bg);
@@ -25,12 +36,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --info-bg: #1c3350;
-    --info-text: #a9cdf0;
+    --text: #e0e1d9;
+    --text-h: #f7f6f0;
+    --text-muted: #b8bbb1;
+    --bg: #191b17;
+    --surface: #23251f;
+    --border: #3a3d35;
+    --border-strong: #62655c;
+    --ink: #f2f0e8;
+    --accent: #e58168;
+    --accent-soft: #9d6557;
+    --accent-pale: #f0b5a5;
+    --bar: #74786e;
+    --bar-track: #373a33;
+    --canvas-shadow: #12130f;
+    --readout-muted: #aeb3a6;
+    --error: #ffb1a1;
+    --focus: #78c8e6;
+    --mascot-sky: #38423b;
+    --mascot-sky-end: #26352e;
+    --mascot-glow: rgb(226 191 115 / 18%);
   }
 }
 
@@ -40,6 +65,8 @@
 
 body {
   margin: 0;
+  min-width: 320px;
+  background: var(--bg);
 }
 
 h1,
@@ -51,10 +78,10 @@ h3 {
 
 h1 {
   font-size: 2.2rem;
-  margin: 0 0 8px;
+  margin: 0;
 }
 
 h2 {
-  font-size: 1.3rem;
+  font-size: 1.45rem;
   margin: 0;
 }

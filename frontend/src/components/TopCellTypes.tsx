@@ -6,6 +6,7 @@ export function TopCellTypes({ cellTypes }: { cellTypes: CellTypeActivity[] }) {
 
   return (
     <section className="panel panel--wide">
+      <p className="panel__index">Downstream response</p>
       <h3>Top activated downstream cell types</h3>
       <div className="hbar-chart">
         {cellTypes.map(({ cellType, activity }) => (
