@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +23,7 @@ class MaleCNSCircuit:
     def n_neurons(self) -> int:
         return self.W.shape[0]
 
-    @property
+    @cached_property
     def hidden_indices(self) -> np.ndarray:
         mask = np.ones(self.n_neurons, dtype=bool)
         mask[self.input_indices] = False

@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.image_encoder import sample_digit_batch  # noqa: E402
 from src.malecns_circuit import MaleCNSCircuit, hidden_features, load_circuit  # noqa: E402
-from src.simulation import CircuitSimulator  # noqa: E402
+from src.simulation import CircuitSimulator, DEFAULT_DECAY, DEFAULT_GAIN, DEFAULT_STEPS  # noqa: E402
 
 
 def classifier() -> object:
@@ -89,9 +89,9 @@ def main() -> None:
         "input_neurons": int(len(circuit.input_indices)),
         "feature_dim": int(features.shape[1]),
         "feature_construction": "concatenate(final_state[hidden], mean_state[hidden]); visual input neurons excluded",
-        "simulation_steps": 12,
-        "decay": 0.65,
-        "gain": 1.0,
+        "simulation_steps": DEFAULT_STEPS,
+        "decay": DEFAULT_DECAY,
+        "gain": DEFAULT_GAIN,
         "dataset": circuit.metadata.get("dataset"),
         "random_seed": args.seed,
         "digits_dataset": "scikit-learn handwritten digits dataset",

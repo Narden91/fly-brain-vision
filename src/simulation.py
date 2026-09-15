@@ -7,6 +7,11 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import sparse
 
+DEFAULT_STEPS = 12
+DEFAULT_DECAY = 0.65
+DEFAULT_GAIN = 1.0
+DEFAULT_INPUT_GAIN = 1.0
+
 
 @dataclass(frozen=True)
 class SimulationResult:
@@ -20,10 +25,10 @@ class CircuitSimulator:
         W: sparse.spmatrix,
         input_indices: np.ndarray,
         *,
-        steps: int = 12,
-        decay: float = 0.65,
-        gain: float = 1.0,
-        input_gain: float = 1.0,
+        steps: int = DEFAULT_STEPS,
+        decay: float = DEFAULT_DECAY,
+        gain: float = DEFAULT_GAIN,
+        input_gain: float = DEFAULT_INPUT_GAIN,
     ) -> None:
         if W.shape[0] != W.shape[1]:
             raise ValueError("Circuit matrix must be square with W[post, pre] orientation.")
@@ -42,12 +47,13 @@ class CircuitSimulator:
             raise ValueError("inputs must have shape (batch, number of visual input neurons).")
 
         state = np.zeros((inputs.shape[0], self.W.shape[0]), dtype=np.float32)
-        input_current = np.zeros_like(state)
-        input_current[:, self.input_indices] = self.input_gain * inputs
         mean_state = np.zeros_like(state)
         for _ in range(self.steps):
             recurrent = self.W.dot(state.T).T
-            state = np.tanh(self.decay * state + self.gain * recurrent + input_current)
+            state *= self.decay
+            state += self.gain * recurrent
+            state[:, self.input_indices] += self.input_gain * inputs
+            np.tanh(state, out=state)
             mean_state += state
         mean_state /= self.steps
         if single:
