@@ -8,124 +8,121 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
-from src.fly_encoder import FlyEncoder
-
+from src.image_encoder import plot_samples, sample_image
+from src.malecns_circuit import hidden_features, load_circuit
+from src.simulation import CircuitSimulator
 
 ROOT = Path(__file__).resolve().parent
-MODEL_PATH = ROOT / "models" / "mnist_medulla_probe.joblib"
-META_PATH = MODEL_PATH.with_suffix(".json")
+MATRIX_PATH = ROOT / "data/malecns_circuit.npz"
+CIRCUIT_META_PATH = ROOT / "data/malecns_circuit_meta.json"
+MODEL_PATH = ROOT / "models/digit_probe.joblib"
+MODEL_META_PATH = ROOT / "models/digit_probe.json"
+BENCHMARK_PATH = ROOT / "models/benchmark.json"
 
-st.set_page_config(page_title="Fly Brain Vision Demo", page_icon="🪰", layout="wide")
-st.title("Fly Brain Vision Demo")
+st.set_page_config(page_title="MaleCNS Fly Brain Classifier", page_icon="🪰", layout="wide")
+st.title("MaleCNS Fly Brain Classifier")
 st.caption(
-    "A frozen connectome-constrained Drosophila visual system turns an image into neural activity; "
-    "a tiny linear readout predicts the digit."
+    "A handwritten digit is projected onto visual columns from the real MaleCNS connectome, "
+    "propagated through measured neuron-to-neuron wiring, and classified from the resulting neural activity."
+)
+st.info(
+    "This is a toy computational model built on real anatomical connectivity. "
+    "The connectome supplies the wiring; the dynamics and classifier are simplified software assumptions."
 )
 
-with st.expander("What this demo actually uses"):
+
+def read_json(path: Path, name: str) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{name} metadata is missing or corrupt.") from exc
+
+
+@st.cache_resource
+def resources():
+    circuit = load_circuit(MATRIX_PATH, CIRCUIT_META_PATH)
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError("Classifier is missing. Run `python scripts/train_probe.py` after building the circuit.")
+    return circuit, CircuitSimulator(circuit.W, circuit.input_indices), joblib.load(MODEL_PATH)
+
+
+try:
+    circuit, simulator, probe = resources()
+    model_meta = read_json(MODEL_META_PATH, "Classifier") if MODEL_META_PATH.exists() else {}
+    benchmark = read_json(BENCHMARK_PATH, "Benchmark") if BENCHMARK_PATH.exists() else {}
+except (FileNotFoundError, ValueError, OSError) as exc:
+    st.error(str(exc))
+    st.stop()
+
+with st.expander("Where does the brain data come from?"):
     st.markdown(
-        """
-This app uses **FlyVis**, a PyTorch model whose architecture is constrained by measured
-Drosophila visual-system connectivity. It does **not** execute the entire 2026 MaleCNS
-connectome as a neural network. MaleCNS is a structural wiring dataset; FlyVis supplies
-neural dynamics and pretrained parameters that make this kind of demo executable.
-        """
+        "MaleCNS v1.0 is the public complete adult male *Drosophila* CNS connectome. "
+        "It is a collaboration involving HHMI Janelia/FlyEM, the University of Cambridge, "
+        "MRC Laboratory of Molecular Biology, Google Research, and collaborators. The release "
+        "contains more than 166,000 neurons and about 125 million synaptic connections. This app "
+        "uses a small visual subgraph. MaleCNS data are CC-BY. Connection values start as anatomical "
+        "synapse counts, then use explicit mathematical normalization for numerical stability."
     )
 
-if not MODEL_PATH.exists():
-    st.error(
-        "The linear readout has not been trained yet. Run `flyvis download-pretrained`, "
-        "then `python scripts/train_probe.py --samples 2000`, and restart the app."
-    )
-    st.stop()
-
-
-@st.cache_resource
-def load_encoder() -> FlyEncoder:
-    return FlyEncoder()
-
-
-@st.cache_resource
-def load_probe():
-    return joblib.load(MODEL_PATH)
-
-
-encoder = load_encoder()
-probe = load_probe()
-metadata = json.loads(META_PATH.read_text()) if META_PATH.exists() else {}
-
-uploaded = st.file_uploader(
-    "Upload a handwritten digit image",
-    type=["png", "jpg", "jpeg", "webp"],
-    help="Best results: one digit, centered, high contrast.",
-)
-
+uploaded = st.file_uploader("Upload a handwritten digit image", type=["png", "jpg", "jpeg", "webp"])
 if uploaded is None:
-    st.info("Upload a digit to run it through the fly visual-system model.")
-    if metadata:
-        st.write(
-            f"Current probe: {metadata.get('samples', '?')} MNIST examples, "
-            f"held-out accuracy {metadata.get('accuracy', 0):.1%}."
-        )
+    st.info("Upload one centered, high-contrast digit to run the connectome-derived circuit.")
+    st.stop()
+try:
+    image = Image.open(uploaded)
+    image.load()
+    xy = np.asarray(circuit.metadata["input_xy"], dtype=np.float32)
+    _, input_values = sample_image(image, xy)
+except (UnidentifiedImageError, OSError, ValueError) as exc:
+    st.error(f"Could not read that image: {exc}")
     st.stop()
 
-image = Image.open(uploaded)
-result = encoder.encode_image(image)
-probs = probe.predict_proba(result.features[None])[0]
+result = simulator.simulate(input_values)
+features = hidden_features(result.final_state, result.mean_state, circuit)
+probabilities = probe.predict_proba(features[None])[0]
 classes = probe.classes_.astype(int)
-order = np.argsort(probs)[::-1]
+order = np.argsort(probabilities)[::-1]
 prediction = int(classes[order[0]])
-confidence = float(probs[order[0]])
 
-left, middle, right = st.columns([1, 1, 1])
-with left:
-    st.subheader("1. Input")
+first, second, third, fourth = st.columns(4)
+with first:
+    st.subheader("1. Input image")
     st.image(image, use_container_width=True)
-
-with middle:
-    st.subheader("2. Fly-eye sampling")
-    fig, ax = plt.subplots(figsize=(4, 4))
-    ax.scatter(
-        encoder.hex_x,
-        encoder.hex_y,
-        c=result.retina,
-        s=42,
-        marker="h",
-        cmap="gray",
-        vmin=0,
-        vmax=1,
-    )
-    ax.set_aspect("equal")
-    ax.axis("off")
+with second:
+    st.subheader("2. MaleCNS visual-column sampling")
+    fig, ax = plt.subplots(figsize=(3.4, 3.4))
+    plot_samples(ax, xy, input_values)
     st.pyplot(fig, use_container_width=True)
     plt.close(fig)
-
-with right:
-    st.subheader("3. Linear readout")
+with third:
+    st.subheader("3. Connectome activity")
+    st.write("MaleCNS v1.0")
+    st.write(f"{circuit.n_neurons:,} biological neurons")
+    st.write(f"{circuit.W.nnz:,} biological connections")
+    st.write(f"{len(circuit.input_indices):,} image-input neurons")
+    st.write(f"{simulator.steps} simulation steps")
+with fourth:
+    st.subheader("4. Prediction")
     st.metric("Predicted digit", prediction)
-    st.metric("Readout confidence", f"{confidence:.1%}")
-    top = pd.DataFrame(
-        {
-            "digit": classes[order[:5]],
-            "probability": probs[order[:5]],
-        }
-    ).set_index("digit")
-    st.bar_chart(top)
+    st.metric("Classifier confidence", f"{probabilities[order[0]]:.1%}")
+    st.bar_chart(pd.DataFrame({"probability": probabilities}, index=classes))
 
-st.subheader("What the fly visual circuit did")
-activity = pd.DataFrame(
-    {
-        "cell_type": result.activity_names,
-        "mean_activity": result.activity_values,
-        "magnitude": np.abs(result.activity_values),
-    }
-).sort_values("magnitude", ascending=False)
+hidden = circuit.hidden_indices
+types = circuit.metadata.get("cell_types", [])
+body_ids = circuit.metadata["body_ids"]
+labels = [types[i] if i < len(types) and types[i] else f"bodyId {body_ids[i]}" for i in hidden]
+activity = pd.DataFrame({"cell type": labels, "activity": result.mean_state[hidden]})
+activity = activity.assign(magnitude=activity["activity"].abs()).groupby("cell type", as_index=False).sum()
+st.subheader("Top activated downstream cell types")
+st.bar_chart(activity.nlargest(15, "magnitude").set_index("cell type")["activity"])
 
-st.bar_chart(activity.head(15).set_index("cell_type")["mean_activity"])
-st.caption(
-    "The chart shows the strongest mean responses among selected medulla/Tm cell types. "
-    "The classifier sees the spatial response pattern across these biological cell types; "
-    "it does not see the raw uploaded image directly."
-)
+metrics = {
+    "Input-only baseline": model_meta.get("input_only_accuracy", benchmark.get("input_only_accuracy")),
+    "MaleCNS hidden-state readout": model_meta.get("accuracy", benchmark.get("malecns_accuracy")),
+    "Randomized-edge control": benchmark.get("randomized_accuracy"),
+}
+available = {name: f"{value:.1%}" for name, value in metrics.items() if isinstance(value, (float, int))}
+if available:
+    st.caption("Experimental held-out accuracy: " + " · ".join(f"{name}: {value}" for name, value in available.items()))

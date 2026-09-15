@@ -18,8 +18,6 @@ from scipy import sparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.malecns_circuit import load_circuit  # noqa: E402
-
 DATASET = "male-cns:v1.0"
 OPTIC_COLUMNS_URL = (
     "https://raw.githubusercontent.com/flyconnectome/2025malecns/main/"
@@ -131,7 +129,7 @@ def build_artifact(
     if len(input_ids) > max_neurons:
         raise ValueError("MAX_NEURONS is smaller than the number of visual input neurons.")
     selected, current = set(input_ids), input_ids
-    for _ in range(hops):
+    for hop in range(hops):
         if not current or len(selected) >= max_neurons:
             break
         _, edges = fetch_adjacencies(
@@ -145,7 +143,9 @@ def build_artifact(
         edges = _edges_or_error(edges, "hop")
         candidates = edges.groupby("bodyId_post", as_index=False)["weight"].sum().sort_values("weight", ascending=False)
         room = max_neurons - len(selected)
-        current = [int(body_id) for body_id in candidates["bodyId_post"] if int(body_id) not in selected][:room]
+        remaining_hops = hops - hop
+        limit = room if remaining_hops == 1 else max(1, room // remaining_hops)
+        current = [int(body_id) for body_id in candidates["bodyId_post"] if int(body_id) not in selected][:limit]
         selected.update(current)
 
     selected_ids = sorted(selected)

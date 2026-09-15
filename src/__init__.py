@@ -1,1 +1,1 @@
-"""Fly-brain vision demo package."""
+"""MaleCNS connectome-derived digit demo package."""

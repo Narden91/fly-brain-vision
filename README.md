@@ -1,94 +1,94 @@
-# Fly Brain Vision Demo
+# MaleCNS Fly Brain Classifier
 
-A deliberately small demo showing how a **connectome-constrained fruit-fly visual system** can be used as a frozen feature extractor for image classification.
+Can a real biological wiring diagram be used like a computational network?
 
-Upload a handwritten digit → sample it through a simulated fly eye → run the stimulus through **FlyVis** → classify the resulting neural activity with a linear readout.
-
-> **Scientific accuracy:** this repository does **not** claim that the complete 2026 MaleCNS connectome is itself a pretrained image classifier. MaleCNS is a structural wiring map. The executable network here is **FlyVis**, whose architecture is constrained by measured Drosophila visual-system connectivity and whose dynamics were task-optimized in the published FlyVis work.
-
-## Why this demo
-
-The point is not MNIST accuracy. The point is to make the idea tangible:
+This project extracts a small visual circuit directly from the public MaleCNS v1.0 fruit-fly connectome, stimulates its visual-column neurons with an image, propagates activity through measured synaptic connections, and trains a tiny linear classifier on the resulting activity.
 
 ```text
 image
   ↓
-simulated fly eye (721 photoreceptors)
+real MaleCNS optic-column neurons
   ↓
-connectome-constrained FlyVis network
+real MaleCNS connectivity
   ↓
-medulla / Tm neural activity
+toy dynamical simulation
   ↓
-small linear classifier
+downstream neural activity
+  ↓
+linear classifier
   ↓
 digit
 ```
 
-The biological network is frozen. Only the tiny readout is trained for digit labels.
+> This is not a simulated fly mind and not a biologically complete neural simulation. MaleCNS provides measured neuron-to-neuron wiring and synapse counts. Activity dynamics, input encoding, normalization, and classifier are simplified computational assumptions.
 
-## Quick start
+The goal is to show the path from public anatomical data to a small computational graph. It is not a claim about biological digit recognition or classifier accuracy.
 
-FlyVis 1.2.0 supports Python 3.9–3.12. Python 3.11 is a safe choice.
+## Run the prepared demo
+
+If this checkout includes `data/malecns_circuit.npz`, its metadata, and the model files:
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-
 pip install -r requirements.txt
-flyvis download-pretrained
-python scripts/train_probe.py --samples 2000
 streamlit run app.py
 ```
 
-Or:
+The app runs offline after those files have been prepared. It does not need a neuPrint token.
+
+## Rebuild the data and models
+
+Create a free neuPrint token at <https://neuprint.janelia.org>. Keep it in your shell environment, never in a file committed to this repository.
 
 ```bash
-make prepare
-make run
+export NEUPRINT_APPLICATION_CREDENTIALS="..."
+python scripts/build_circuit.py
+python scripts/train_probe.py
+python scripts/benchmark.py
+streamlit run app.py
 ```
 
-The one-time `train_probe.py` step can be compute-heavy on CPU because it actually simulates the connectome-constrained visual network. For a polished public demo, run it once on a GPU, then commit or attach the generated `models/mnist_medulla_probe.joblib` and metadata file to a release so visitors only need to run the app.
+Windows PowerShell:
 
-## What the application shows
+```powershell
+$env:NEUPRINT_APPLICATION_CREDENTIALS = "..."
+python scripts/build_circuit.py
+```
 
-1. The uploaded image.
-2. The image after sampling by FlyVis's hexagonal `BoxEye` receptor layout.
-3. The digit prediction from a multinomial logistic-regression readout.
-4. A chart of the strongest selected medulla/Tm cell-type responses.
+`build_circuit.py` downloads and caches the official `optic-column-type-assignments-v1.0.xlsx` table from `flyconnectome/2025malecns`. It selects valid right-eye L1 neurons as visual input neurons, parses their published optic-column labels into positions, collects two downstream hops from MaleCNS through neuPrint, then stores a normalized sparse matrix. L1 neurons are not called photoreceptors here.
 
-This makes the biological intermediate representation visible rather than presenting a black-box classifier.
+Raw edge values are anatomical synapse counts. The builder applies `log1p(count)` and normalizes each postsynaptic matrix row, so the toy recurrent update stays numerically stable. The matrix uses `W[post, pre]` for a connection from `pre` to `post`.
 
-## Repository structure
+## Experiment
+
+Training uses the scikit-learn handwritten digits dataset, with no external image download:
 
 ```text
-app.py                       Streamlit UI
-src/fly_encoder.py           FlyVis image → neural feature encoder
-scripts/train_probe.py       Train the small MNIST linear readout
-models/                      Generated readout + metadata
-requirements.txt             Runtime dependencies
-Makefile                     One-command setup helpers
+digit image → optic-column samples → MaleCNS toy dynamics → hidden-neuron state → logistic regression
 ```
 
-## Relationship to the 2026 complete fly CNS map
+The classifier uses concatenated final and mean activity from downstream neurons only. It does not receive raw pixels or input-neuron activity as its main feature vector.
 
-In September 2026, Google Research described its collaboration with HHMI Janelia and others on the complete male Drosophila CNS connectome. Janelia's MaleCNS v1.0 release exposes neuron annotations, neurotransmitter predictions, skeletons and the full segment-to-segment connection graph. The full connection-weight table is about 1.1 GB.
+`train_probe.py` also measures an input-only linear baseline. `benchmark.py` compares that baseline, the MaleCNS graph, and a deterministic randomized-edge control. Results are saved only when the scripts run; this repository does not invent accuracy values.
 
-That dataset is extremely useful, but a connectome table alone does not specify all neuronal dynamics or effective synaptic parameters required to run it as an artificial neural network. That is why this demo starts with FlyVis: it is already an executable PyTorch model built around measured fly visual-system connectivity.
+## Commands
 
-A natural v2 of this repository is to replace or augment FlyVis with a visual subgraph extracted directly from MaleCNS v1.0 and explicitly define the missing dynamics.
+```bash
+make install
+make circuit
+make train
+make benchmark
+make run
+make test
+```
 
-## Expected benchmark
+## Scientific limits
 
-A separate public 2026 FlyVis/MNIST experiment reported about **92.7%** static-digit accuracy from medulla-level features with a linear probe, versus about **88.4%** from the retinal hexal input. Treat that result as a useful sanity check, not as a guarantee for this smaller training script; accuracy varies with sample count, preprocessing and feature selection.
+MaleCNS gives biological connectivity and anatomical synapse counts. It does not supply measured activity for this task, an image encoder, effective synaptic signs, or a digit classifier. The simulated states are software outputs, not measured fly neural activity. Neurotransmitter annotations, where retained in metadata, are predictions and are not required for the default unsigned simulator.
 
-## Sources
+## Data source and attribution
 
-- Google Research, *A connectomics milestone: Mapping the complete male fruit fly brain* (2026-09-03)
-- HHMI Janelia, *Male CNS Connectome* and dataset downloads
-- TuragaLab, `flyvis` and its documentation
-- Lappalainen et al., *Connectome-constrained networks predict neural activity across the fly visual system*, Nature (2024)
-- Hikotty, `flyvis-sagemaker-mnist` (independent proof-of-concept)
+MaleCNS v1.0 is the public complete adult male *Drosophila* CNS connectome, produced by a collaboration involving HHMI Janelia/FlyEM, University of Cambridge, MRC Laboratory of Molecular Biology, Google Research, and collaborators. The release contains more than 166,000 neurons and about 125 million synaptic connections. This demo uses only a small visual subgraph.
 
-## License
+MaleCNS-derived data are CC-BY and retain their upstream attribution requirements. The code in this repository is MIT licensed; that does not relicense the MaleCNS data.
 
-This demo repository is provided under the MIT License. FlyVis, its pretrained models, MaleCNS data, MNIST and other upstream resources retain their own licenses and attribution requirements.
+Sources: [MaleCNS supplemental data](https://github.com/flyconnectome/2025malecns), [neuPrint](https://neuprint.janelia.org).
