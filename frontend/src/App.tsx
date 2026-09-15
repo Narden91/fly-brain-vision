@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import './App.css'
 import { AccuracyFooter } from './components/AccuracyFooter'
+import { BrainScan } from './components/BrainScan'
 import { ColumnSampling } from './components/ColumnSampling'
 import { ConnectomeStats } from './components/ConnectomeStats'
 import { DrawingCanvas } from './components/DrawingCanvas'
@@ -67,6 +68,8 @@ function App() {
           />
         </div>
       </section>
+
+      <BrainScan />
 
       {hasFullPrediction && data && (
         <section className="results" aria-labelledby="results-heading">
