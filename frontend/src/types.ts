@@ -25,4 +25,10 @@ export interface MetaResponse {
   nInputNeurons: number
   simulationSteps: number
   accuracy: AccuracySummary
+  model?: {
+    kind: string
+    version: string
+    temporalAccuracy: number | null
+    device: string
+  }
 }

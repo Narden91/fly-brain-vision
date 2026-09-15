@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -29,6 +30,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from src.image_encoder import plot_samples, sample_image  # noqa: E402
+from src.differentiable_circuit import (  # noqa: E402
+    device_label,
+    load_differentiable_probe,
+    place_model_with_sparse_fallback,
+    predict_differentiable,
+)
 from src.malecns_circuit import hidden_features, load_circuit  # noqa: E402
 from src.simulation import CircuitSimulator  # noqa: E402
 
@@ -36,7 +43,10 @@ MATRIX_PATH = ROOT / "data/malecns_circuit.npz"
 CIRCUIT_META_PATH = ROOT / "data/malecns_circuit_meta.json"
 MODEL_PATH = ROOT / "models/digit_probe.joblib"
 MODEL_META_PATH = ROOT / "models/digit_probe.json"
+DIFFERENTIABLE_MODEL_PATH = ROOT / "models/differentiable_probe.pt"
+DIFFERENTIABLE_MODEL_META_PATH = ROOT / "models/differentiable_probe.json"
 BENCHMARK_PATH = ROOT / "models/benchmark.json"
+DIFFERENTIABLE_BENCHMARK_PATH = ROOT / "models/differentiable_benchmark.json"
 FRONTEND_DIST = ROOT / "frontend/dist"
 
 TOP_CELL_TYPES = 15
@@ -50,15 +60,30 @@ def read_json(path: Path) -> dict:
 
 try:
     circuit = load_circuit(MATRIX_PATH, CIRCUIT_META_PATH)
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError("Classifier is missing. Run `python scripts/train_probe.py` after building the circuit.")
-    probe = joblib.load(MODEL_PATH)
-except (FileNotFoundError, ValueError, OSError) as exc:
+    differentiable_probe = None
+    probe = None
+    if DIFFERENTIABLE_MODEL_PATH.exists():
+        differentiable_probe, differentiable_checkpoint = load_differentiable_probe(DIFFERENTIABLE_MODEL_PATH, circuit)
+        inference_device = place_model_with_sparse_fallback(
+            differentiable_probe, os.getenv("MALECNS_DEVICE", "auto")
+        )
+        classes = np.asarray(differentiable_checkpoint["classes"], dtype=np.int64)
+        model_meta = read_json(DIFFERENTIABLE_MODEL_META_PATH)
+    else:
+        if not MODEL_PATH.exists():
+            raise FileNotFoundError(
+                "Classifier is missing. Run `python scripts/train_differentiable_probe.py` or scripts/train_probe.py."
+            )
+        probe = joblib.load(MODEL_PATH)
+        inference_device = None
+        classes = probe.classes_.astype(np.int64)
+        model_meta = read_json(MODEL_META_PATH)
+except (FileNotFoundError, ValueError, OSError, RuntimeError, KeyError) as exc:
     raise RuntimeError(str(exc)) from exc
 
-simulator = CircuitSimulator(circuit.W, circuit.input_indices)
-model_meta = read_json(MODEL_META_PATH)
+simulator = differentiable_probe.simulator if differentiable_probe is not None else CircuitSimulator(circuit.W, circuit.input_indices)
 benchmark = read_json(BENCHMARK_PATH)
+differentiable_benchmark = read_json(DIFFERENTIABLE_BENCHMARK_PATH)
 INPUT_XY = np.asarray(circuit.metadata["input_xy"], dtype=np.float32)
 
 app = FastAPI(title="MaleCNS Fly Brain Classifier API")
@@ -118,6 +143,7 @@ def top_cell_type_activity(mean_state: np.ndarray) -> list[dict]:
 @app.get("/api/meta")
 def get_meta():
     """Static facts about the circuit and classifier — fetched once, not per prediction."""
+    control_metrics = differentiable_benchmark.get("controls", {}).get("degree_weight_preserving", {})
     return {
         "dataset": circuit.metadata.get("dataset"),
         "nNeurons": circuit.n_neurons,
@@ -126,8 +152,14 @@ def get_meta():
         "simulationSteps": simulator.steps,
         "accuracy": {
             "inputOnly": model_meta.get("input_only_accuracy", benchmark.get("input_only_accuracy")),
-            "maleCns": model_meta.get("accuracy", benchmark.get("malecns_accuracy")),
-            "randomizedControl": benchmark.get("randomized_accuracy"),
+            "maleCns": model_meta.get("accuracy", model_meta.get("static_accuracy", benchmark.get("malecns_accuracy"))),
+            "randomizedControl": control_metrics.get("mean_temporal_accuracy", benchmark.get("randomized_accuracy")),
+        },
+        "model": {
+            "kind": model_meta.get("model_kind", "linear-hidden-state-readout"),
+            "version": model_meta.get("model_version", "legacy"),
+            "temporalAccuracy": model_meta.get("temporal_accuracy"),
+            "device": device_label(inference_device) if inference_device is not None else "cpu",
         },
     }
 
@@ -140,10 +172,13 @@ def predict(req: PredictRequest):
     if float(prepared.max()) <= 0.0:
         return {"prediction": None, "confidence": 0.0}
 
-    result = simulator.simulate(input_values)
-    features = hidden_features(result.final_state, result.mean_state, circuit)
-    probabilities = probe.predict_proba(features[None])[0]
-    classes = probe.classes_.astype(int)
+    if differentiable_probe is not None:
+        probabilities, final_state, mean_state = predict_differentiable(differentiable_probe, input_values)
+    else:
+        result = simulator.simulate(input_values)
+        features = hidden_features(result.final_state, result.mean_state, circuit)
+        probabilities = probe.predict_proba(features[None])[0]
+        final_state, mean_state = result.final_state, result.mean_state
     best = int(np.argmax(probabilities))
 
     fig, ax = plt.subplots(figsize=(3.4, 3.4))
@@ -155,7 +190,7 @@ def predict(req: PredictRequest):
         "probabilities": {str(int(c)): float(p) for c, p in zip(classes, probabilities)},
         "whatFlySeesPng": grid_to_png(prepared),
         "columnSamplingPng": figure_to_png(fig),
-        "topCellTypes": top_cell_type_activity(result.mean_state),
+        "topCellTypes": top_cell_type_activity(mean_state),
     }
 
 

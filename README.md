@@ -30,6 +30,38 @@ digit prediction
 - Node.js 18+
 - npm 9+
 
+### NVIDIA GPU acceleration (RTX 5080)
+
+The differentiable fixed-connectome model uses CUDA automatically when a
+CUDA-enabled PyTorch installation can execute its sparse recurrence. It falls
+back to CPU if CUDA is missing or that sparse operation is unsupported. For this
+RTX 5080, install the provided CUDA 12.8 environment requirements (the PyTorch
+CUDA index publishes Windows wheels for this track), then verify it:
+
+```powershell
+pip install -r requirements-cuda.txt
+python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+The pinned CUDA wheel is a convenience for this project; the
+[official PyTorch selector](https://pytorch.org/get-started/locally/) remains
+the reference if you need a different Python or CUDA combination.
+
+Train with automatic selection (the default) or require the GPU explicitly:
+
+```powershell
+python scripts/train_differentiable_probe.py --device auto
+python scripts/train_differentiable_probe.py --device cuda
+```
+
+For the API server, `MALECNS_DEVICE=auto` is the default. Set it to `cuda` to
+fail fast rather than fall back, or to `cpu` for reproducible CPU-only runs.
+
+```powershell
+$env:MALECNS_DEVICE = "cuda"
+python -m uvicorn backend.main:app --port 8000
+```
+
 ### Run the demo (with pre-built data and models)
 
 ```bash

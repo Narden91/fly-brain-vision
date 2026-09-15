@@ -8,6 +8,8 @@ data/malecns_circuit.npz
 data/malecns_circuit_meta.json
 models/*.joblib
 models/*.json
+models/*.pt
+.uv-cache/
 !data/.gitkeep
 !models/.gitkeep
 frontend/node_modules/

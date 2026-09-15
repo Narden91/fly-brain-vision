@@ -1,0 +1,6 @@
+# CUDA 12.8 is the CUDA-enabled PyTorch wheel track for Blackwell RTX 50-series GPUs.
+# Keep the shared application dependencies in one place, then constrain only torch
+# to the published CUDA build.
+-r requirements.txt
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0+cu128

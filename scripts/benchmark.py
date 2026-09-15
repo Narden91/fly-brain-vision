@@ -8,7 +8,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from scipy import sparse
 from sklearn.datasets import load_digits
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,15 +15,12 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.train_probe import circuit_features, digit_inputs, fit_accuracy, split_indices  # noqa: E402
 from src.malecns_circuit import MaleCNSCircuit, load_circuit  # noqa: E402
+from src.rewiring import degree_weight_preserving_rewire  # noqa: E402
 
 
 def randomized_edge_circuit(circuit: MaleCNSCircuit, seed: int) -> MaleCNSCircuit:
-    """Permute postsynaptic targets; edges, weights, inputs, and shape stay unchanged."""
-    coo = circuit.W.tocoo()
-    rng = np.random.default_rng(seed)
-    target_map = rng.permutation(circuit.n_neurons)
-    W = sparse.csr_matrix((coo.data, (target_map[coo.row], coo.col)), shape=circuit.W.shape)
-    return MaleCNSCircuit(W=W, metadata=circuit.metadata, input_indices=circuit.input_indices)
+    """Degree- and weight-preserving control for the legacy linear benchmark."""
+    return degree_weight_preserving_rewire(circuit, seed=seed)
 
 
 def main() -> None:
@@ -48,7 +44,7 @@ def main() -> None:
         "input_only_accuracy": input_accuracy,
         "malecns_accuracy": malecns_accuracy,
         "randomized_accuracy": randomized_accuracy,
-        "randomized_control": "postsynaptic-target permutation; same edge count and normalized edge-weight multiset",
+        "randomized_control": "directed target swaps; per-node in/out degree and edge-weight multiset preserved",
         "random_seed": args.seed,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

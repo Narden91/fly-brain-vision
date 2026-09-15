@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: install circuit train benchmark frontend-install frontend-build run dev test
+.PHONY: install circuit train train-differentiable benchmark benchmark-differentiable frontend-install frontend-build run dev test
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -11,8 +11,14 @@ circuit:
 train:
 	$(PYTHON) scripts/train_probe.py
 
+train-differentiable:
+	$(PYTHON) scripts/train_differentiable_probe.py
+
 benchmark:
 	$(PYTHON) scripts/benchmark.py
+
+benchmark-differentiable:
+	$(PYTHON) scripts/benchmark_differentiable.py
 
 frontend-install:
 	cd frontend && npm install
