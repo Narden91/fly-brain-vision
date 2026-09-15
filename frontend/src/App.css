@@ -1,0 +1,220 @@
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+  text-align: left;
+}
+
+.app__caption {
+  color: var(--text);
+  max-width: 760px;
+}
+
+.app__info {
+  background: var(--info-bg);
+  color: var(--info-text);
+  border-radius: 8px;
+  padding: 12px 16px;
+  max-width: 760px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 32px 0;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 24px;
+}
+
+.card__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32px;
+  margin-top: 16px;
+}
+
+/* --- Drawing canvas --- */
+
+.drawing-canvas {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.drawing-canvas__surface {
+  background: #ffffff;
+  border: 2px solid var(--fly-outline);
+  border-radius: 8px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.drawing-canvas__clear {
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--fly-outline);
+  background: #ffffff;
+  color: #1a1a1a;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.drawing-canvas__clear:hover {
+  background: #f0f0f0;
+}
+
+/* --- Fly mascot --- */
+
+.fly-mascot {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.fly-mascot__bubble {
+  background: #ffffff;
+  color: #1a1a1a;
+  border: 2px solid var(--fly-outline);
+  border-radius: 14px;
+  padding: 12px 18px;
+  font-size: 1.1rem;
+}
+
+.fly-mascot__sub {
+  font-size: 0.85rem;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* --- Science panels --- */
+
+.panels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .panels {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel h3 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+.panel p {
+  margin: 4px 0;
+  font-size: 0.9rem;
+}
+
+.panel--wide {
+  grid-column: 1 / -1;
+}
+
+.panel__image {
+  width: 100%;
+  border-radius: 6px;
+  background: #000000;
+}
+
+.panel__image--white {
+  background: #ffffff;
+}
+
+/* --- Probability bar chart (digit 0-9) --- */
+
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  margin-top: 12px;
+}
+
+.bar-chart__column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.bar-chart__bar {
+  width: 100%;
+  min-height: 2px;
+  background: var(--fly-body-dark);
+  border-radius: 2px 2px 0 0;
+  transition: height 0.2s ease;
+}
+
+.bar-chart__label {
+  font-size: 0.75rem;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+/* --- Top cell types horizontal bar chart --- */
+
+.hbar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.hbar-chart__row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.hbar-chart__label {
+  font-size: 0.8rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hbar-chart__track {
+  background: var(--border);
+  border-radius: 3px;
+  height: 14px;
+}
+
+.hbar-chart__bar {
+  height: 100%;
+  border-radius: 3px;
+}
+
+.hbar-chart__bar--positive {
+  background: var(--fly-eye);
+}
+
+.hbar-chart__bar--negative {
+  background: var(--fly-body-dark);
+}
+
+.accuracy-footer {
+  margin-top: 24px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
